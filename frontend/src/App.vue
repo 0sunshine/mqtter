@@ -14,6 +14,7 @@ import {
   LogOut,
   MessageSquare,
   PenLine,
+  Play,
   RadioTower,
   RefreshCw,
   Router,
@@ -21,14 +22,15 @@ import {
   Send,
   Settings2,
   TerminalSquare,
+  Trash2,
   Wifi,
   WifiOff,
   X
 } from "lucide-vue-next";
 import { api, ApiError } from "./api";
-import type { Device, DeviceType, Message, ObservedTopic, Page, ScheduledPublishTask, SystemAlert, User } from "./types";
+import type { Device, DeviceType, Message, ObservedTopic, Page, QuickAction, ScheduledPublishTask, SystemAlert, User } from "./types";
 
-type DeviceAction = "overview" | "topics" | "messages" | "publish" | "schedule" | "capabilities" | "type";
+type DeviceAction = "overview" | "topics" | "messages" | "publish" | "schedule" | "quickActions" | "capabilities" | "type";
 type CapabilityCommandId =
   | "emit"
   | "erase"
@@ -169,6 +171,7 @@ const state = reactive({
   deviceTopics: emptyPage<ObservedTopic>(),
   messages: emptyPage<Message>(),
   scheduledTasks: emptyPage<ScheduledPublishTask>(),
+  quickActions: emptyPage<QuickAction>(),
   alerts: emptyPage<SystemAlert>(),
   deviceTypes: [] as DeviceType[]
 });
@@ -194,6 +197,30 @@ const scheduleForm = reactive({
   weekdays: [1, 2, 3, 4, 5] as number[],
   result: "",
   error: ""
+});
+
+const quickActionForm = reactive({
+  name: "",
+  topic: "",
+  no: 110,
+  qos: 0,
+  retain: false,
+  result: "",
+  error: "",
+  runningId: "",
+  deletingId: ""
+});
+
+const quickActionScheduleForm = reactive({
+  actionId: "",
+  name: "",
+  scheduleType: "once" as "once" | "daily" | "weekly",
+  runAtLocal: "",
+  timeOfDay: "09:00",
+  weekdays: [1, 2, 3, 4, 5] as number[],
+  result: "",
+  error: "",
+  submitting: false
 });
 
 const capabilityForm = reactive({
@@ -225,6 +252,7 @@ const alertCount = computed(() => state.alerts.items.filter((item) => item.statu
 const selectedCapability = computed(
   () => infraredCapabilities.find((item) => item.id === capabilityForm.commandId) ?? infraredCapabilities[0]
 );
+const quickActionPayloadPreview = computed(() => JSON.stringify(buildInfraredEmitPayload(Number(quickActionForm.no)), null, 2));
 const capabilityPayloadPreview = computed(() => JSON.stringify(buildCapabilityPayload(), null, 2));
 const actionTitle = computed(() => {
   if (!state.selectedDevice || !state.activeAction) return "";
@@ -234,6 +262,7 @@ const actionTitle = computed(() => {
     messages: "消息",
     publish: "发布",
     schedule: "定时",
+    quickActions: "快捷操作",
     capabilities: "能力",
     type: "类型"
   };
@@ -329,8 +358,12 @@ async function openAction(device: Device, action: DeviceAction) {
   publishForm.error = "";
   capabilityForm.result = "";
   capabilityForm.error = "";
+  quickActionForm.result = "";
+  quickActionForm.error = "";
+  quickActionScheduleForm.result = "";
+  quickActionScheduleForm.error = "";
 
-  if (action === "topics" || action === "publish" || action === "schedule" || action === "capabilities" || action === "overview") {
+  if (action === "topics" || action === "publish" || action === "schedule" || action === "quickActions" || action === "capabilities" || action === "overview") {
     await loadDeviceTopics(device);
   }
   if (action === "messages" || action === "overview") {
@@ -339,6 +372,11 @@ async function openAction(device: Device, action: DeviceAction) {
   if (action === "schedule") {
     await loadScheduledTasks(device);
     seedScheduleForm();
+  }
+  if (action === "quickActions") {
+    await Promise.all([loadQuickActions(device), loadScheduledTasks(device)]);
+    seedQuickActionForm();
+    resetQuickActionScheduleForm();
   }
   if (action === "capabilities") {
     seedCapabilityForm();
@@ -351,6 +389,10 @@ async function openAction(device: Device, action: DeviceAction) {
 
 async function loadScheduledTasks(device: Device) {
   state.scheduledTasks = await api.scheduledPublishes(device.id);
+}
+
+async function loadQuickActions(device: Device) {
+  state.quickActions = await api.quickActions(device.id);
 }
 
 function closeSheet() {
@@ -412,6 +454,48 @@ function seedScheduleForm() {
   scheduleForm.runAtLocal = toLocalDateTimeValue(next);
 }
 
+function seedQuickActionForm() {
+  const firstPublishable = state.deviceTopics.items.find((item) => canPublishTopic(item.topic));
+  quickActionForm.name = "";
+  quickActionForm.topic = firstPublishable?.topic ?? "";
+  quickActionForm.no = 110;
+  quickActionForm.qos = 0;
+  quickActionForm.retain = false;
+  quickActionForm.result = "";
+  quickActionForm.error = "";
+  quickActionForm.runningId = "";
+  quickActionForm.deletingId = "";
+}
+
+function resetQuickActionScheduleForm() {
+  const next = new Date(Date.now() + 10 * 60 * 1000);
+  quickActionScheduleForm.actionId = "";
+  quickActionScheduleForm.name = "";
+  quickActionScheduleForm.scheduleType = "once";
+  quickActionScheduleForm.runAtLocal = toLocalDateTimeValue(next);
+  quickActionScheduleForm.timeOfDay = "09:00";
+  quickActionScheduleForm.weekdays = [1, 2, 3, 4, 5];
+  quickActionScheduleForm.result = "";
+  quickActionScheduleForm.error = "";
+  quickActionScheduleForm.submitting = false;
+}
+
+function openQuickActionSchedule(action: QuickAction) {
+  if (quickActionScheduleForm.actionId === action.id) {
+    resetQuickActionScheduleForm();
+    return;
+  }
+  const next = new Date(Date.now() + 10 * 60 * 1000);
+  quickActionScheduleForm.actionId = action.id;
+  quickActionScheduleForm.name = quickActionTaskName(action);
+  quickActionScheduleForm.scheduleType = "once";
+  quickActionScheduleForm.runAtLocal = toLocalDateTimeValue(next);
+  quickActionScheduleForm.timeOfDay = "09:00";
+  quickActionScheduleForm.weekdays = [1, 2, 3, 4, 5];
+  quickActionScheduleForm.result = "";
+  quickActionScheduleForm.error = "";
+}
+
 async function createScheduledPublish() {
   if (!state.selectedDevice) return;
   scheduleForm.error = "";
@@ -448,10 +532,128 @@ async function cancelScheduledPublish(taskId: string) {
   await loadScheduledTasks(state.selectedDevice);
 }
 
+async function createQuickAction() {
+  if (!state.selectedDevice) return;
+  quickActionForm.error = "";
+  quickActionForm.result = "";
+  const no = Number(quickActionForm.no);
+  if (!Number.isInteger(no) || no < 1 || no > 248) {
+    quickActionForm.error = "红外码编号范围为 1~248";
+    return;
+  }
+  try {
+    const action = await api.createQuickAction({
+      deviceId: state.selectedDevice.id,
+      name: quickActionForm.name,
+      topic: quickActionForm.topic,
+      payload: quickActionPayloadPreview.value,
+      qos: quickActionForm.qos,
+      retain: quickActionForm.retain,
+      payloadEncoding: "utf8"
+    });
+    quickActionForm.result = `已保存 ${action.name}`;
+    quickActionForm.name = "";
+    await loadQuickActions(state.selectedDevice);
+  } catch (err) {
+    quickActionForm.error = errorMessage(err);
+  }
+}
+
+async function executeQuickAction(action: QuickAction) {
+  if (!state.selectedDevice) return;
+  quickActionForm.error = "";
+  quickActionForm.result = "";
+  quickActionForm.runningId = action.id;
+  try {
+    const res = await api.executeQuickAction(action.id);
+    quickActionForm.result = `已执行 ${action.name}，命令 ${res.commandId}`;
+    await Promise.all([loadDeviceTopics(state.selectedDevice), loadDeviceMessages(state.selectedDevice)]);
+  } catch (err) {
+    quickActionForm.error = errorMessage(err);
+  } finally {
+    quickActionForm.runningId = "";
+  }
+}
+
+async function deleteQuickAction(action: QuickAction) {
+  if (!state.selectedDevice) return;
+  if (!window.confirm(`删除快捷操作「${action.name}」？`)) return;
+  quickActionForm.error = "";
+  quickActionForm.result = "";
+  quickActionForm.deletingId = action.id;
+  try {
+    await api.deleteQuickAction(action.id);
+    quickActionForm.result = `已删除 ${action.name}`;
+    if (quickActionScheduleForm.actionId === action.id) {
+      resetQuickActionScheduleForm();
+    }
+    await loadQuickActions(state.selectedDevice);
+  } catch (err) {
+    quickActionForm.error = errorMessage(err);
+  } finally {
+    quickActionForm.deletingId = "";
+  }
+}
+
+async function createQuickActionSchedule(action: QuickAction) {
+  if (!state.selectedDevice) return;
+  quickActionScheduleForm.error = "";
+  quickActionScheduleForm.result = "";
+  quickActionScheduleForm.submitting = true;
+  try {
+    const runAt =
+      quickActionScheduleForm.scheduleType === "once" && quickActionScheduleForm.runAtLocal
+        ? new Date(quickActionScheduleForm.runAtLocal).toISOString()
+        : undefined;
+    const task = await api.createScheduledPublish({
+      deviceId: action.deviceId,
+      name: quickActionScheduleForm.name || quickActionTaskName(action),
+      topic: action.topic,
+      payload: action.payload,
+      qos: action.qos,
+      retain: action.retain,
+      scheduleType: quickActionScheduleForm.scheduleType,
+      runAt,
+      timeOfDay: quickActionScheduleForm.scheduleType === "once" ? undefined : quickActionScheduleForm.timeOfDay,
+      weekdays: quickActionScheduleForm.scheduleType === "weekly" ? quickActionScheduleForm.weekdays : undefined,
+      timezone: "Asia/Hong_Kong",
+      payloadEncoding: "utf8"
+    });
+    quickActionScheduleForm.result = `已创建定时 ${task.id}`;
+    await loadScheduledTasks(state.selectedDevice);
+  } catch (err) {
+    quickActionScheduleForm.error = errorMessage(err);
+  } finally {
+    quickActionScheduleForm.submitting = false;
+  }
+}
+
+function toggleQuickActionWeekday(day: number) {
+  if (quickActionScheduleForm.weekdays.includes(day)) {
+    quickActionScheduleForm.weekdays = quickActionScheduleForm.weekdays.filter((item) => item !== day);
+  } else {
+    quickActionScheduleForm.weekdays = [...quickActionScheduleForm.weekdays, day].sort((a, b) => a - b);
+  }
+}
+
+function quickActionTaskName(action: QuickAction) {
+  return `快捷操作：${action.name}`;
+}
+
+function quickActionScheduledTasks(action: QuickAction) {
+  return state.scheduledTasks.items.filter(
+    (task) => task.topic === action.topic && task.payload === action.payload && task.status === "active"
+  );
+}
+
 function selectCapabilityCommand(commandId: CapabilityCommandId) {
   capabilityForm.commandId = commandId;
   capabilityForm.result = "";
   capabilityForm.error = "";
+}
+
+function buildInfraredEmitPayload(no: number): Record<string, unknown> {
+  return { action: "emit", data: { no }, type: "infrared" };
 }
 
 function buildCapabilityPayload(): Record<string, unknown> {
@@ -459,7 +661,7 @@ function buildCapabilityPayload(): Record<string, unknown> {
   let payload: Record<string, unknown>;
   switch (capabilityForm.commandId) {
     case "emit":
-      payload = { action: "emit", data: { no }, type: "infrared" };
+      payload = buildInfraredEmitPayload(no);
       break;
     case "erase":
       payload = { action: "erase", type: "infrared" };
@@ -750,6 +952,10 @@ function formatDate(value?: string) {
               <Clock3 :size="16" />
               定时
             </button>
+            <button v-if="isInfraredController(device)" title="快捷操作" @click="openAction(device, 'quickActions')">
+              <KeyRound :size="16" />
+              快捷
+            </button>
             <button v-if="isInfraredController(device)" title="设备能力" @click="openAction(device, 'capabilities')">
               <RadioTower :size="16" />
               能力
@@ -961,6 +1167,115 @@ function formatDate(value?: string) {
               </button>
             </article>
             <div v-if="state.scheduledTasks.items.length === 0" class="empty compact">暂无定时任务</div>
+          </section>
+        </div>
+
+        <div v-if="state.activeAction === 'quickActions'" class="sheet-body quick-action-layout">
+          <form class="quick-action-form" @submit.prevent="createQuickAction">
+            <label class="field">
+              <span>名称</span>
+              <input v-model="quickActionForm.name" placeholder="打开客厅空调" />
+            </label>
+            <label class="field">
+              <span>发布主题</span>
+              <input v-model="quickActionForm.topic" placeholder="devices/demo/in" />
+            </label>
+            <div class="form-row">
+              <label class="field compact">
+                <span>红外码编号</span>
+                <input v-model.number="quickActionForm.no" type="number" min="1" max="248" />
+              </label>
+              <label class="field compact">
+                <span>QoS</span>
+                <select v-model.number="quickActionForm.qos">
+                  <option :value="0">0</option>
+                  <option :value="1">1</option>
+                </select>
+              </label>
+              <label class="toggle">
+                <input v-model="quickActionForm.retain" type="checkbox" />
+                <span>retain</span>
+              </label>
+            </div>
+            <label class="field">
+              <span>Payload 预览</span>
+              <textarea class="payload-preview" :value="quickActionPayloadPreview" readonly spellcheck="false"></textarea>
+            </label>
+            <button class="primary" type="submit">
+              <KeyRound :size="17" />
+              添加快捷操作
+            </button>
+            <p v-if="quickActionForm.result" class="success-line">{{ quickActionForm.result }}</p>
+            <p v-if="quickActionForm.error" class="error-line">{{ quickActionForm.error }}</p>
+          </form>
+
+          <section class="quick-action-list">
+            <h3><KeyRound :size="16" /> 已有快捷操作</h3>
+            <article v-for="action in state.quickActions.items" :key="action.id" class="quick-action-card">
+              <div class="quick-action-card-head">
+                <div>
+                  <strong>{{ action.name }}</strong>
+                  <p class="mono">{{ action.topic }}</p>
+                </div>
+                <span>QoS {{ action.qos }}</span>
+              </div>
+              <pre>{{ action.payload }}</pre>
+              <div class="quick-action-actions">
+                <button type="button" :disabled="quickActionForm.runningId === action.id" @click="executeQuickAction(action)">
+                  <Play :size="15" />
+                  {{ quickActionForm.runningId === action.id ? "执行中" : "执行" }}
+                </button>
+                <button type="button" @click="openQuickActionSchedule(action)">
+                  <Clock3 :size="15" />
+                  {{ quickActionScheduleForm.actionId === action.id ? "收起定时" : "定时" }}
+                </button>
+                <button type="button" :disabled="quickActionForm.deletingId === action.id" @click="deleteQuickAction(action)">
+                  <Trash2 :size="15" />
+                  删除
+                </button>
+              </div>
+              <div v-if="quickActionScheduledTasks(action).length > 0" class="quick-action-schedules">
+                <span v-for="task in quickActionScheduledTasks(action)" :key="task.id">
+                  {{ task.scheduleType }} · 下次 {{ formatDate(task.nextRunAt) }}
+                  <button type="button" @click="cancelScheduledPublish(task.id)">取消</button>
+                </span>
+              </div>
+              <form v-if="quickActionScheduleForm.actionId === action.id" class="quick-action-schedule-form" @submit.prevent="createQuickActionSchedule(action)">
+                <label class="field">
+                  <span>定时名称</span>
+                  <input v-model="quickActionScheduleForm.name" />
+                </label>
+                <div class="schedule-mode">
+                  <button type="button" :class="{ active: quickActionScheduleForm.scheduleType === 'once' }" @click="quickActionScheduleForm.scheduleType = 'once'">一次性</button>
+                  <button type="button" :class="{ active: quickActionScheduleForm.scheduleType === 'daily' }" @click="quickActionScheduleForm.scheduleType = 'daily'">每天</button>
+                  <button type="button" :class="{ active: quickActionScheduleForm.scheduleType === 'weekly' }" @click="quickActionScheduleForm.scheduleType = 'weekly'">按周</button>
+                </div>
+                <label v-if="quickActionScheduleForm.scheduleType === 'once'" class="field">
+                  <span>执行时间</span>
+                  <input v-model="quickActionScheduleForm.runAtLocal" type="datetime-local" />
+                </label>
+                <label v-if="quickActionScheduleForm.scheduleType !== 'once'" class="field compact-time">
+                  <span>执行时刻</span>
+                  <input v-model="quickActionScheduleForm.timeOfDay" type="time" />
+                </label>
+                <div v-if="quickActionScheduleForm.scheduleType === 'weekly'" class="weekday-picker">
+                  <button type="button" :class="{ active: quickActionScheduleForm.weekdays.includes(1) }" @click="toggleQuickActionWeekday(1)">周一</button>
+                  <button type="button" :class="{ active: quickActionScheduleForm.weekdays.includes(2) }" @click="toggleQuickActionWeekday(2)">周二</button>
+                  <button type="button" :class="{ active: quickActionScheduleForm.weekdays.includes(3) }" @click="toggleQuickActionWeekday(3)">周三</button>
+                  <button type="button" :class="{ active: quickActionScheduleForm.weekdays.includes(4) }" @click="toggleQuickActionWeekday(4)">周四</button>
+                  <button type="button" :class="{ active: quickActionScheduleForm.weekdays.includes(5) }" @click="toggleQuickActionWeekday(5)">周五</button>
+                  <button type="button" :class="{ active: quickActionScheduleForm.weekdays.includes(6) }" @click="toggleQuickActionWeekday(6)">周六</button>
+                  <button type="button" :class="{ active: quickActionScheduleForm.weekdays.includes(7) }" @click="toggleQuickActionWeekday(7)">周日</button>
+                </div>
+                <button class="primary" type="submit" :disabled="quickActionScheduleForm.submitting">
+                  <Clock3 :size="17" />
+                  {{ quickActionScheduleForm.submitting ? "创建中" : "创建定时执行" }}
+                </button>
+                <p v-if="quickActionScheduleForm.result" class="success-line">{{ quickActionScheduleForm.result }}</p>
+                <p v-if="quickActionScheduleForm.error" class="error-line">{{ quickActionScheduleForm.error }}</p>
+              </form>
+            </article>
+            <div v-if="state.quickActions.items.length === 0" class="empty compact">暂无快捷操作</div>
           </section>
         </div>
 

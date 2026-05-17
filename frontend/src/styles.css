@@ -75,6 +75,8 @@ button {
 .topic-meta,
 .message-row header,
 .message-row footer,
+.quick-action-card-head,
+.quick-action-actions,
 .split-list h3,
 .alert-row {
   display: flex;
@@ -606,8 +608,17 @@ textarea:focus {
   align-items: start;
 }
 
+.quick-action-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(300px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
 .schedule-form,
 .scheduled-list,
+.quick-action-form,
+.quick-action-list,
 .capability-form {
   display: grid;
   gap: 14px;
@@ -622,7 +633,8 @@ textarea:focus {
 
 .schedule-mode button,
 .weekday-picker button,
-.scheduled-card button {
+.scheduled-card button,
+.quick-action-card button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -632,6 +644,13 @@ textarea:focus {
   background: #ffffff;
   color: #344039;
   padding: 0 10px;
+}
+
+.quick-action-card .primary {
+  border: 0;
+  background: #226d5c;
+  color: #ffffff;
+  font-weight: 700;
 }
 
 .schedule-mode button.active,
@@ -680,6 +699,85 @@ textarea:focus {
 
 .scheduled-card button {
   justify-self: start;
+}
+
+.quick-action-list h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quick-action-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #e1e6df;
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 10px;
+}
+
+.quick-action-card-head {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quick-action-card-head p {
+  margin-top: 4px;
+}
+
+.quick-action-card-head span {
+  color: #68736b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.quick-action-card pre {
+  max-height: 150px;
+  overflow: auto;
+  margin: 0;
+  border-radius: 6px;
+  background: #f6f7f5;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.quick-action-actions {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.quick-action-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.quick-action-schedules {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid #e6ebe4;
+  padding-top: 8px;
+}
+
+.quick-action-schedules span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #68736b;
+  font-size: 12px;
+}
+
+.quick-action-schedules button {
+  min-height: 26px;
+  padding: 0 8px;
+}
+
+.quick-action-schedule-form {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #e6ebe4;
+  padding-top: 10px;
 }
 
 .capability-layout {
@@ -822,6 +920,7 @@ textarea:focus {
   .info-grid,
   .split-list,
   .schedule-layout,
+  .quick-action-layout,
   .capability-layout {
     grid-template-columns: 1fr;
   }

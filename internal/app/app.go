@@ -66,6 +66,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	messageSvc := service.NewMessageService(store, clock)
 	publishSvc := service.NewPublishService(store, store, mqttBroker, clock, ids, cfg.MaxPayloadBytes)
 	scheduledSvc := service.NewScheduledPublishService(store, publishSvc, clock, ids, logger, cfg.MaxPayloadBytes)
+	quickActionSvc := service.NewQuickActionService(store, store, publishSvc, clock, ids, cfg.MaxPayloadBytes)
 	scheduler := service.NewScheduledPublishScheduler(scheduledSvc, cfg.SchedulerInterval, logger)
 	alertSvc := service.NewAlertService(store)
 
@@ -78,6 +79,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 		Publisher:     publishSvc,
 		Commands:      publishSvc,
 		Scheduled:     scheduledSvc,
+		QuickActions:  quickActionSvc,
 		Alerts:        alertSvc,
 		Realtime:      hub,
 		SessionCookie: cfg.SessionCookieName,

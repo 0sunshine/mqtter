@@ -1,10 +1,13 @@
 import type {
+  CreateQuickAction,
   CreateScheduledPublish,
   Device,
   DeviceType,
   Message,
   ObservedTopic,
   Page,
+  QuickAction,
+  QuickActionExecuteResult,
   PublishResult,
   ScheduledPublishTask,
   SystemAlert,
@@ -99,6 +102,26 @@ export const api = {
   },
   cancelScheduledPublish(taskId: string) {
     return request<ScheduledPublishTask>(`/api/scheduled-publishes/${taskId}/cancel`, {
+      method: "POST"
+    });
+  },
+  quickActions(deviceId: string) {
+    const params = new URLSearchParams({ deviceId, pageSize: "50" });
+    return request<Page<QuickAction>>(`/api/quick-actions?${params.toString()}`);
+  },
+  createQuickAction(payload: CreateQuickAction) {
+    return request<QuickAction>("/api/quick-actions", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+  deleteQuickAction(actionId: string) {
+    return request<void>(`/api/quick-actions/${actionId}`, {
+      method: "DELETE"
+    });
+  },
+  executeQuickAction(actionId: string) {
+    return request<QuickActionExecuteResult>(`/api/quick-actions/${actionId}/execute`, {
       method: "POST"
     });
   },

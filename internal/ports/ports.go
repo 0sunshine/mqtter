@@ -59,6 +59,13 @@ type ScheduledPublishRepository interface {
 	FinishScheduledRun(ctx context.Context, result domain.ScheduledPublishFinish) error
 }
 
+type QuickActionRepository interface {
+	CreateQuickAction(ctx context.Context, action domain.QuickActionDTO) (domain.QuickActionDTO, error)
+	ListQuickActions(ctx context.Context, f domain.QuickActionFilter) (domain.Page[domain.QuickActionDTO], error)
+	GetQuickAction(ctx context.Context, id string) (domain.QuickActionDTO, error)
+	DeleteQuickAction(ctx context.Context, id string) error
+}
+
 type AlertRepository interface {
 	UpsertAlert(ctx context.Context, alert domain.SystemAlert) (domain.SystemAlert, error)
 	ListAlerts(ctx context.Context, f domain.AlertFilter) (domain.Page[domain.SystemAlert], error)

@@ -467,6 +467,67 @@ WHERE id=$1
 	return tx.Commit(ctx)
 }
 
+func (s *Store) CreateQuickAction(ctx context.Context, action domain.QuickActionDTO) (domain.QuickActionDTO, error) {
+	row := s.pool.QueryRow(ctx, `
+INSERT INTO quick_actions (id, device_id, admin_user_id, name, topic, payload_text, qos, retain, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (device_id, name) DO UPDATE
+SET admin_user_id=EXCLUDED.admin_user_id,
+    topic=EXCLUDED.topic,
+    payload_text=EXCLUDED.payload_text,
+    qos=EXCLUDED.qos,
+    retain=EXCLUDED.retain,
+    updated_at=EXCLUDED.updated_at
+RETURNING id, device_id, admin_user_id, name, topic, payload_text, qos, retain, created_at, updated_at,
+  (SELECT client_id FROM devices WHERE devices.id=quick_actions.device_id)`,
+		action.ID, action.DeviceID, action.AdminUserID, action.Name, action.Topic, action.PayloadText,
+		int(action.QoS), action.Retain, action.CreatedAt, action.UpdatedAt)
+	return scanQuickAction(row)
+}
+
+func (s *Store) ListQuickActions(ctx context.Context, f domain.QuickActionFilter) (domain.Page[domain.QuickActionDTO], error) {
+	f.Page, f.PageSize = domain.NormalizePage(f.Page, f.PageSize)
+	offset := (f.Page - 1) * f.PageSize
+	rows, err := s.pool.Query(ctx, `
+SELECT quick_actions.id, device_id, admin_user_id, name, topic, payload_text, qos, retain,
+  quick_actions.created_at, quick_actions.updated_at, devices.client_id, count(*) OVER()
+FROM quick_actions
+JOIN devices ON devices.id=quick_actions.device_id
+WHERE ($1='' OR device_id=$1)
+ORDER BY quick_actions.created_at DESC
+LIMIT $2 OFFSET $3`,
+		f.DeviceID, f.PageSize, offset)
+	if err != nil {
+		return domain.Page[domain.QuickActionDTO]{}, err
+	}
+	defer rows.Close()
+	items := []domain.QuickActionDTO{}
+	total := 0
+	for rows.Next() {
+		item, rowTotal, err := scanQuickActionWithTotal(rows)
+		if err != nil {
+			return domain.Page[domain.QuickActionDTO]{}, err
+		}
+		items = append(items, item)
+		total = rowTotal
+	}
+	return domain.Page[domain.QuickActionDTO]{Items: items, Page: f.Page, PageSize: f.PageSize, Total: total}, rows.Err()
+}
+
+func (s *Store) GetQuickAction(ctx context.Context, id string) (domain.QuickActionDTO, error) {
+	return scanQuickAction(s.pool.QueryRow(ctx, `
+SELECT quick_actions.id, device_id, admin_user_id, name, topic, payload_text, qos, retain,
+  quick_actions.created_at, quick_actions.updated_at, devices.client_id
+FROM quick_actions
+JOIN devices ON devices.id=quick_actions.device_id
+WHERE quick_actions.id=$1`, id))
+}
+
+func (s *Store) DeleteQuickAction(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM quick_actions WHERE id=$1`, id)
+	return err
+}
+
 func (s *Store) UpsertAlert(ctx context.Context, alert domain.SystemAlert) (domain.SystemAlert, error) {
 	row := s.pool.QueryRow(ctx, `
 INSERT INTO system_alerts (id, level, code, message, status, first_seen_at, last_seen_at)
@@ -770,6 +831,35 @@ func scanScheduledTaskWithTotal(row scanner) (domain.ScheduledPublishTaskDTO, in
 		task.LastRunAt = &lastRunAt.Time
 	}
 	return task, total, nil
+}
+
+func scanQuickAction(row scanner) (domain.QuickActionDTO, error) {
+	var action domain.QuickActionDTO
+	var qos int
+	err := row.Scan(
+		&action.ID, &action.DeviceID, &action.AdminUserID, &action.Name, &action.Topic, &action.PayloadText,
+		&qos, &action.Retain, &action.CreatedAt, &action.UpdatedAt, &action.ClientID,
+	)
+	if err != nil {
+		return domain.QuickActionDTO{}, err
+	}
+	action.QoS = byte(qos)
+	return action, nil
+}
+
+func scanQuickActionWithTotal(row scanner) (domain.QuickActionDTO, int, error) {
+	var action domain.QuickActionDTO
+	var qos int
+	var total int
+	err := row.Scan(
+		&action.ID, &action.DeviceID, &action.AdminUserID, &action.Name, &action.Topic, &action.PayloadText,
+		&qos, &action.Retain, &action.CreatedAt, &action.UpdatedAt, &action.ClientID, &total,
+	)
+	if err != nil {
+		return domain.QuickActionDTO{}, 0, err
+	}
+	action.QoS = byte(qos)
+	return action, total, nil
 }
 
 func scanAlert(row scanner) (domain.SystemAlert, error) {

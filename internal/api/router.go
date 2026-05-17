@@ -53,6 +53,13 @@ type ScheduledPublisher interface {
 	CancelScheduledPublish(ctx context.Context, id string) (domain.ScheduledPublishTaskDTO, error)
 }
 
+type QuickActionManager interface {
+	CreateQuickAction(ctx context.Context, cmd domain.CreateQuickActionCommand) (domain.QuickActionDTO, error)
+	ListQuickActions(ctx context.Context, f domain.QuickActionFilter) (domain.Page[domain.QuickActionDTO], error)
+	DeleteQuickAction(ctx context.Context, id string) error
+	ExecuteQuickAction(ctx context.Context, id string, adminUserID string) (domain.QuickActionExecuteResult, error)
+}
+
 type AlertReader interface {
 	ListAlerts(ctx context.Context, f domain.AlertFilter) (domain.Page[domain.SystemAlert], error)
 }
@@ -66,6 +73,7 @@ type Deps struct {
 	Publisher     AdminPublisher
 	Commands      CommandReader
 	Scheduled     ScheduledPublisher
+	QuickActions  QuickActionManager
 	Alerts        AlertReader
 	Realtime      http.Handler
 	SessionCookie string
@@ -101,6 +109,10 @@ func NewRouter(deps Deps) http.Handler {
 			r.Get("/scheduled-publishes", rt.listScheduledPublishes)
 			r.Post("/scheduled-publishes", rt.createScheduledPublish)
 			r.Post("/scheduled-publishes/{taskID}/cancel", rt.cancelScheduledPublish)
+			r.Get("/quick-actions", rt.listQuickActions)
+			r.Post("/quick-actions", rt.createQuickAction)
+			r.Delete("/quick-actions/{actionID}", rt.deleteQuickAction)
+			r.Post("/quick-actions/{actionID}/execute", rt.executeQuickAction)
 			r.Get("/commands", rt.listCommands)
 			r.Get("/alerts", rt.listAlerts)
 			r.Get("/device-types", rt.listDeviceTypes)
@@ -335,6 +347,61 @@ func (rt *Router) createScheduledPublish(w http.ResponseWriter, r *http.Request)
 
 func (rt *Router) cancelScheduledPublish(w http.ResponseWriter, r *http.Request) {
 	res, err := rt.deps.Scheduled.CancelScheduledPublish(r.Context(), chi.URLParam(r, "taskID"))
+	writeResult(w, r, res, err)
+}
+
+func (rt *Router) listQuickActions(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	page, pageSize := pageParams(r)
+	res, err := rt.deps.QuickActions.ListQuickActions(r.Context(), domain.QuickActionFilter{
+		DeviceID: q.Get("deviceId"),
+		Page:     page,
+		PageSize: pageSize,
+	})
+	writeResult(w, r, res, err)
+}
+
+func (rt *Router) createQuickAction(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		DeviceID        string `json:"deviceId"`
+		Name            string `json:"name"`
+		Topic           string `json:"topic"`
+		Payload         string `json:"payload"`
+		PayloadEncoding string `json:"payloadEncoding"`
+		QoS             byte   `json:"qos"`
+		Retain          bool   `json:"retain"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.PayloadEncoding != "" && req.PayloadEncoding != "utf8" && req.PayloadEncoding != "json" {
+		writeError(w, r, domain.InvalidInput("unsupported_payload_encoding", "payloadEncoding must be utf8 or json"))
+		return
+	}
+	user := currentUser(r.Context())
+	res, err := rt.deps.QuickActions.CreateQuickAction(r.Context(), domain.CreateQuickActionCommand{
+		AdminUserID: user.ID,
+		DeviceID:    req.DeviceID,
+		Name:        req.Name,
+		Topic:       req.Topic,
+		PayloadText: req.Payload,
+		QoS:         req.QoS,
+		Retain:      req.Retain,
+	})
+	writeResult(w, r, res, err)
+}
+
+func (rt *Router) deleteQuickAction(w http.ResponseWriter, r *http.Request) {
+	if err := rt.deps.QuickActions.DeleteQuickAction(r.Context(), chi.URLParam(r, "actionID")); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (rt *Router) executeQuickAction(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r.Context())
+	res, err := rt.deps.QuickActions.ExecuteQuickAction(r.Context(), chi.URLParam(r, "actionID"), user.ID)
 	writeResult(w, r, res, err)
 }
 

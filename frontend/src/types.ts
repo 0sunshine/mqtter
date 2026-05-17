@@ -93,6 +93,37 @@ export type ScheduledPublishTask = {
   updatedAt: string;
 };
 
+export type QuickAction = {
+  id: string;
+  deviceId: string;
+  clientId?: string;
+  adminUserId: string;
+  name: string;
+  topic: string;
+  payload: string;
+  qos: number;
+  retain: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateQuickAction = {
+  deviceId: string;
+  name: string;
+  topic: string;
+  payload: string;
+  qos: number;
+  retain: boolean;
+  payloadEncoding: "utf8";
+};
+
+export type QuickActionExecuteResult = {
+  actionId: string;
+  commandId: string;
+  status: string;
+  publishedAt: string;
+};
+
 export type CreateScheduledPublish = {
   deviceId: string;
   name: string;
